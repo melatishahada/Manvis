@@ -8,7 +8,9 @@ from sqlalchemy import text
 from passlib.context import CryptContext
 from database import engine
 
+from PIL import Image, ImageOps
 from io import BytesIO, StringIO
+from urllib.request import Request, urlopen
 from pathlib import Path
 from datetime import datetime
 import csv
@@ -17,7 +19,7 @@ from openpyxl import Workbook
 from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
-
+from excel_photos import embed_photos
 
 # =========================================================
 # APP
@@ -282,37 +284,55 @@ def get_manual_visit_data(start_date=None, end_date=None):
     query = text(
         """
         SELECT
-    manual_visit.id,
-    sales.name AS user_name,
-    kowil.name AS kowil_code,
-    outlet.name AS outlet_name,
-    manual_visit.visit_date,
-    manual_visit.visit_catatan,
-    manual_visit.visit_status,
-    manual_visit.visit_image,
-    manual_visit.created_at,
-    manual_visit.updated_at
-FROM manual_visit
-JOIN sales
-    ON manual_visit.user_id = sales.id
-JOIN kowil
-    ON manual_visit.kowil_id = kowil.id
-JOIN outlet
-    ON manual_visit.outlet_id = outlet.id
+            mv.id,
+            TRIM(u.name) AS user_name,
+            TRIM(k.kowil_code) AS kowil_code,
+            o.outlet_name AS outlet_name,
+            mv.visit_date,
+            mv.visit_catatan,
+            mv.visit_status,
+            mv.visit_image,
+            CASE
+                WHEN mv.visit_image IS NULL
+                     OR TRIM(mv.visit_image) = ''
+                THEN NULL
+
+                WHEN mv.visit_image LIKE 'http://%'
+                     OR mv.visit_image LIKE 'https://%'
+                THEN TRIM(mv.visit_image)
+
+                ELSE CONCAT(
+                    'https://outlet.galenium.com/',
+                    TRIM(LEADING '/' FROM TRIM(mv.visit_image))
+                )
+            END AS link_gambar,
+            mv.created_at,
+            mv.updated_at
+        FROM manual_visits AS mv
+        JOIN users AS u
+            ON mv.user_id = u.id
+        JOIN kowils AS k
+            ON mv.kowil_id = k.id
+        JOIN outlets AS o
+            ON mv.outlet_id = o.id
         WHERE
-            (:start_date IS NULL
-                OR manual_visit.visit_date >= :start_date)
+            (
+                :start_date IS NULL
+                OR mv.visit_date >= :start_date
+            )
             AND
-            (:end_date IS NULL
-                OR manual_visit.visit_date <= :end_date)
+            (
+                :end_date IS NULL
+                OR mv.visit_date <= :end_date
+            )
+            AND mv.visit_status = 0
         ORDER BY
-            manual_visit.visit_date ASC,
-            manual_visit.id ASC
+            mv.visit_date ASC,
+            mv.id ASC
         """
     )
 
     with engine.connect() as connection:
-
         result = connection.execute(
             query,
             {
@@ -325,6 +345,24 @@ JOIN outlet
 
     return rows
 
+
+
+def fix_photo_orientation(image_bytes: bytes) -> bytes:
+    with Image.open(BytesIO(image_bytes)) as img:
+        # Terapkan orientasi yang tersimpan dari kamera HP
+        fixed = ImageOps.exif_transpose(img)
+
+        # Paksa gambar landscape menjadi portrait
+        if fixed.width > fixed.height:
+            fixed = fixed.rotate(90, expand=True)
+
+        # Excel akan menerima gambar JPEG yang sudah diproses
+        if fixed.mode != "RGB":
+            fixed = fixed.convert("RGB")
+
+        output = BytesIO()
+        fixed.save(output, format="JPEG", quality=95)
+        return output.getvalue()
 
 def validate_dates(start_date, end_date):
 
@@ -435,6 +473,7 @@ def manual_visits(
                 "visit_catatan": row["visit_catatan"],
                 "visit_status": row["visit_status"],
                 "visit_image": row["visit_image"],
+                "link_gambar": row["link_gambar"],
                 "created_at": (
                     row["created_at"].isoformat(sep=" ")
                     if row["created_at"]
@@ -587,41 +626,70 @@ def download_excel(
             value=row["visit_status"],
         )
 
+        
         # Kolom GAMBAR
         image_cell = worksheet.cell(
             row=index,
             column=8,
         )
 
-        visit_image = row["visit_image"] or ""
+        link_gambar = row["link_gambar"]
 
-        # Tetap tulis path/nama file di kolom GAMBAR.
-        # Jika file tersedia, gambar juga ditempelkan ke Excel.
-        image_cell.value = visit_image
+        # URL tetap ditulis jika gambar gagal diambil.
+        image_cell.value = link_gambar or ""
 
-        if visit_image:
-            image_path = BASE_DIR / visit_image
+        if link_gambar:
+            try:
+                request = Request(
+                    link_gambar,
+                    headers={
+                        "User-Agent": "Mozilla/5.0"
+                    },
+                )
 
-            if image_path.exists() and image_path.is_file():
-                try:
-                    excel_image = XLImage(str(image_path))
+                with urlopen(request, timeout=15) as response:
+                    image_bytes = response.read()
 
-                    # Ukuran gambar di Excel
-                    excel_image.width = 140
-                    excel_image.height = 100
+                fixed_image_bytes = fix_photo_orientation(image_bytes)
 
-                    worksheet.add_image(
-                        excel_image,
-                        f"H{index}",
-                    )
+                excel_image = XLImage(
+                    BytesIO(fixed_image_bytes)
+                )
 
-                    worksheet.row_dimensions[index].height = 80
+                # Sesuaikan ukuran foto di Excel.
+                original_width = excel_image.width
+                original_height = excel_image.height
+                max_width = 140
+                max_height = 100
 
-                except Exception as image_error:
-                    image_cell.value = (
-                        f"{visit_image} | "
-                        f"Gagal embed: {image_error}"
-                    )
+                scale = min(
+                    max_width / original_width,
+                    max_height / original_height,
+                )
+
+                excel_image.width = int(
+                    original_width * scale
+                )
+                excel_image.height = int(
+                    original_height * scale
+                )
+
+                worksheet.add_image(
+                    excel_image,
+                    f"H{index}",
+                )
+
+                worksheet.row_dimensions[index].height = 80
+
+                # Kosongkan teks URL agar sel menampilkan foto.
+                image_cell.value = None
+
+            except Exception as image_error:
+                print(
+                    f"Gagal mengambil gambar "
+                    f"untuk ID {row['id']}: {image_error}"
+                )
+
 
         created_cell = worksheet.cell(
             row=index,
@@ -676,7 +744,7 @@ def download_excel(
         ].width = width
 
     worksheet.freeze_panes = "A2"
-
+    embed_photos(worksheet, rows, IMAGE_DIR)
     # -----------------------------------------------------
     # SAVE TO MEMORY
     # -----------------------------------------------------
@@ -1141,8 +1209,17 @@ def download_report(
 
                     try:
 
+                        with Image.open(image_path) as img:
+                            image_bytes = BytesIO()
+                            img.save(image_bytes, format=img.format or "JPEG")
+                            image_bytes.seek(0)
+
+                        fixed_image_bytes = fix_photo_orientation(
+                            image_bytes.getvalue()
+                        )   
+
                         excel_image = XLImage(
-                            str(image_path)
+                        BytesIO(fixed_image_bytes)
                         )
 
                         excel_image.width = 140
@@ -1220,6 +1297,7 @@ def download_report(
             ].width = width
 
         worksheet.freeze_panes = "A2"
+        embed_photos(worksheet, rows, IMAGE_DIR)
 
         output = BytesIO()
 
@@ -1312,7 +1390,62 @@ def download_report(
         },
     )
 
-    
+# =========================================================
+# DOWNLOAD LOG
+# =========================================================
+
+@app.get("/reports/download-log")
+def get_download_log():
+
+    query = text(
+        """
+        SELECT
+            report_downloads.id,
+            report_downloads.report_id,
+            report_history.filename,
+            report_history.report_type,
+            login_users.id AS user_id,
+            login_users.name AS user_name,
+            login_users.email,
+            report_downloads.downloaded_at
+        FROM report_downloads
+        JOIN report_history
+            ON report_downloads.report_id = report_history.id
+        JOIN login_users
+            ON report_downloads.user_id = login_users.id
+        ORDER BY
+            report_downloads.downloaded_at DESC,
+            report_downloads.id DESC
+        """
+    )
+
+    with engine.connect() as connection:
+        rows = connection.execute(query).mappings().all()
+
+    data = []
+
+    for row in rows:
+        data.append(
+            {
+                "id": row["id"],
+                "reportId": row["report_id"],
+                "filename": row["filename"],
+                "type": row["report_type"],
+                "userId": row["user_id"],
+                "userName": row["user_name"],
+                "email": row["email"],
+                "downloadedAt": (
+                    row["downloaded_at"].isoformat()
+                    if row["downloaded_at"]
+                    else None
+                ),
+            }
+        )
+
+    return {
+        "total": len(data),
+        "data": data,
+    }    
 
 # =========================================================
 # CREATE REPORT HISTORY

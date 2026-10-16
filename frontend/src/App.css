@@ -1567,3 +1567,230 @@ button:disabled {
   }
 
 }
+
+.report-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  padding: 0 12px;
+  background: #fff;
+  min-width: 240px;
+}
+
+.search-box span {
+  font-size: 18px;
+  color: #6b7280;
+}
+
+.search-box input {
+  border: none;
+  outline: none;
+  width: 100%;
+  height: 40px;
+  background: transparent;
+}
+
+.report-search select {
+  height: 42px;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  padding: 0 12px;
+  background: #fff;
+}
+
+@media (max-width: 768px) {
+  .report-search {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .search-box {
+    width: 100%;
+  }
+
+  .report-search select {
+    width: 100%;
+  }
+}
+
+
+/* =====================================================
+   DELETE USER CONFIRMATION
+===================================================== */
+
+.delete-user-modal {
+  width: 100%;
+  max-width: 430px;
+  padding: 30px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.18);
+  text-align: center;
+  animation: deleteModalIn 0.18s ease-out;
+}
+
+.delete-user-icon {
+  width: 54px;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 18px;
+  border-radius: 16px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  font-size: 28px;
+  font-weight: 800;
+}
+
+.delete-user-modal h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 21px;
+}
+
+.delete-user-description {
+  margin: 10px 0 22px;
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.delete-user-detail {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 15px;
+  margin-bottom: 24px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 11px;
+  text-align: left;
+}
+
+.delete-user-avatar {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.delete-user-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.delete-user-info strong {
+  color: #111827;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.delete-user-info span {
+  color: #64748b;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.delete-user-info .delete-user-role {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.delete-user-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.delete-user-actions button {
+  min-height: 40px;
+}
+
+.delete-user-button {
+  padding: 10px 17px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #dc2626;
+  font-size: 13px;
+  font-weight: 700;
+  transition: 0.15s ease;
+}
+
+.delete-user-button:hover {
+  background: #fef2f2;
+  border-color: #f87171;
+}
+
+.delete-user-confirm {
+  padding: 10px 16px;
+  border: 1px solid #dc2626;
+  border-radius: 8px;
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  transition: 0.15s ease;
+}
+
+.delete-user-confirm:hover:not(:disabled) {
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+
+.delete-user-confirm:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+@keyframes deleteModalIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 480px) {
+  .delete-user-modal {
+    padding: 23px 18px;
+  }
+
+  .delete-user-actions {
+    flex-direction: column-reverse;
+  }
+
+  .delete-user-actions button {
+    width: 100%;
+  }
+}

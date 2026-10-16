@@ -4,8 +4,18 @@ import "./App.css";
 const API_URL = "";
 
 const PERMISSIONS = {
-  ADMIN: ["manual_visit", "history", "profile", "users"],
-  USER: ["manual_visit", "history", "profile"],
+  ADMIN: [
+    "manual_visits",
+    "history",
+    "profile",
+    "download_log",
+    "users",
+  ],
+  USER: [
+    "manual_visits",
+    "history",
+    "profile",
+  ],
 };
 
 function App() {
@@ -20,6 +30,7 @@ function App() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [reports, setReports] = useState([]);
+  const [downloadLogs, setDownloadLogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -40,6 +51,23 @@ function App() {
     }
   };
 
+  const loadDownloadLogs = async () => {
+  try {
+    const r = await fetch(`${API_URL}/reports/download-log`);
+
+    if (!r.ok) {
+      throw new Error("Gagal mengambil download log.");
+    }
+
+    const data = await r.json();
+
+    setDownloadLogs(data.data || []);
+  } catch (e) {
+    console.error(e);
+    setError("Tidak dapat mengambil download log.");
+  }
+};
+
   const totalPages = Math.ceil(
   reports.length / ITEMS_PER_PAGE
 );
@@ -53,11 +81,24 @@ const paginatedReports = reports.slice(
 );
 
   useEffect(() => {
-    if (!user) return;
-    if (!canAccess(activePage === "home" ? "dashboard" : activePage)) setActivePage("reports");
-    loadReports();
+  if (!user) return;
 
-  }, [user]);
+  if (
+    !canAccess(
+      activePage === "home"
+        ? "dashboard"
+        : activePage
+    )
+  ) {
+    setActivePage("reports");
+  }
+
+  loadReports();
+
+  if (canAccess("download_log")) {
+    loadDownloadLogs();
+  }
+}, [user]);
 
   const handleLogin = async (username, password) => {
   if (!username || !password) {
@@ -148,86 +189,27 @@ const paginatedReports = reports.slice(
     setShowModal(false); setStartDate(""); setEndDate(""); setError("");
   };
 
-  const downloadReport = async (report) => {
+  const downloadReport = (report) => {
 
-  try {
-
-    setError("");
-
-    if (!user?.id) {
-      throw new Error(
-        "User login tidak ditemukan."
-      );
-    }
-
-    const url =
-      `${API_URL}/reports/history/` +
-      `${report.id}/download` +
-      `?user_id=${user.id}`;
-
-    const response = await fetch(url);
-
-    if (!response.ok) {
-
-      let message =
-        "Gagal melakukan download report.";
-
-      try {
-
-        const data =
-          await response.json();
-
-        message =
-          data.detail ||
-          message;
-
-      } catch {
-        // Abaikan jika response bukan JSON
-      }
-
-      throw new Error(message);
-    }
-
-    const blob =
-      await response.blob();
-
-    const downloadUrl =
-      window.URL.createObjectURL(blob);
-
-    const link =
-      document.createElement("a");
-
-    link.href = downloadUrl;
-
-    link.download =
-      report.filename;
-
-    document.body.appendChild(link);
-
-    link.click();
-
-    link.remove();
-
-    window.URL.revokeObjectURL(
-      downloadUrl
-    );
-
-    // Refresh history agar
-    // Downloaded By langsung muncul
-    await loadReports();
-
-  } catch (error) {
-
-    console.error(
-      "DOWNLOAD ERROR:",
-      error
-    );
-
-    setError(
-      error.message ||
-      "Gagal melakukan download report."
-    );
+  if (!user?.id) {
+    setError("User login tidak ditemukan.");
+    return;
   }
+
+  setError("");
+
+  const url =
+    `${API_URL}/reports/history/` +
+    `${report.id}/download` +
+    `?user_id=${user.id}`;
+
+  window.location.href = url;
+
+  // Refresh history setelah jeda singkat,
+  // supaya "Downloaded by" ter-update
+  setTimeout(() => {
+    loadReports();
+  }, 1500);
 };
 
 const createReport = async (type) => {
@@ -281,11 +263,22 @@ const createReport = async (type) => {
         </div>
         <nav className="sidebar-nav">
           <div className="nav-label">MENU</div>
-          {canAccess("manual_visit") && <>
+          {canAccess("manual_visits") && <>
             <div className="nav-label nav-label-space">REPORT</div>
             <button className={`nav-item ${activePage === "reports" ? "active" : ""}`} onClick={() => setActivePage("reports")}><span className="nav-icon">▣</span><span className="nav-text">Manual Visit</span></button>
           </>}
           {canAccess("history") && <button className={`nav-item ${activePage === "history" ? "active" : ""}`} onClick={() => setActivePage("history")}><span className="nav-icon">▤</span><span className="nav-text">Report History</span></button>}
+          {canAccess("download_log") && (
+  <button
+    className={`nav-item ${
+      activePage === "download_log" ? "active" : ""
+    }`}
+    onClick={() => setActivePage("download_log")}
+  >
+    <span className="nav-icon">↓</span>
+    <span className="nav-text">Download Log</span>
+  </button>
+)}
           {canAccess("users") && <button className={`nav-item ${activePage === "users" ? "active" : ""}`} onClick={() => setActivePage("users")}><span className="nav-icon">☺</span><span className="nav-text">Users</span></button>}
         </nav>
         <div className="sidebar-bottom">
@@ -310,14 +303,15 @@ const createReport = async (type) => {
         </header>
 
         <main className="content">
-          {activePage === "reports" && canAccess("manual_visit") && <ReportsPage reports={reports} error={error} onRun={openModal} onDownload={downloadReport} />}
+          {activePage === "reports" && canAccess("manual_visits") && <ReportsPage reports={reports} error={error} onRun={openModal} onDownload={downloadReport} />}
           {activePage === "history" && canAccess("history") && <ReportsPage reports={reports} error={error} onRun={openModal} onDownload={downloadReport} historyOnly />}
           {activePage === "profile" && canAccess("profile") && <ProfilePage user={user} onLogout={handleLogout} />}
           {activePage === "users" && canAccess("users") && <UsersPage />}
-        </main>
+          {activePage === "download_log" && canAccess("download_log") && ( <DownloadLogPage logs={downloadLogs} error={error}/> )} 
+        </main> 
       </div>
 
-      {showModal && canAccess("manual_visit") && <div className="modal-overlay" onMouseDown={(e) => e.target === e.currentTarget && closeModal()}>
+      {showModal && canAccess("manual_visits") && <div className="modal-overlay" onMouseDown={(e) => e.target === e.currentTarget && closeModal()}>
         <div className="modal">
           <div className="modal-header"><div><h2>Run Report</h2><p>Pilih periode data yang ingin di-download.</p></div><button className="close-button" onClick={closeModal} disabled={loading}>×</button></div>
           <div className="date-grid">
@@ -477,23 +471,39 @@ function ReportsPage({
 
   const [currentPage, setCurrentPage] =
     useState(1);
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("ALL");
 
   useEffect(() => {
-    setCurrentPage(1);
-  }, [reports, historyOnly]);
+  setCurrentPage(1);
+}, [reports, historyOnly, search, typeFilter]);
 
-  const totalPages =
-    Math.ceil(
-      reports.length /
-      ITEMS_PER_PAGE
-    );
+  const filteredReports = reports.filter((report) => {
+  const keyword = search.toLowerCase().trim();
+
+  const matchesSearch =
+    !keyword ||
+    report.filename
+      .toLowerCase()
+      .includes(keyword);
+
+  const matchesType =
+    typeFilter === "ALL" ||
+    report.type === typeFilter;
+
+  return matchesSearch && matchesType;
+});
+
+  const totalPages = Math.ceil(
+  filteredReports.length / ITEMS_PER_PAGE
+);
 
   const startIndex =
     (currentPage - 1) *
     ITEMS_PER_PAGE;
 
   const paginatedReports =
-    reports.slice(
+    filteredReports.slice(
       startIndex,
       startIndex + ITEMS_PER_PAGE
     );
@@ -565,6 +575,34 @@ function ReportsPage({
           </div>
 
         </div>
+
+        {historyOnly && (
+  <div className="report-search">
+    <div className="search-box">
+      <span>⌕</span>
+
+      <input
+        type="text"
+        placeholder="Cari nama report..."
+        value={search}
+        onChange={(e) =>
+          setSearch(e.target.value)
+        }
+      />
+    </div>
+
+    <select
+      value={typeFilter}
+      onChange={(e) =>
+        setTypeFilter(e.target.value)
+      }
+    >
+      <option value="ALL">Semua</option>
+      <option value="Excel">Excel</option>
+      <option value="CSV">CSV</option>
+    </select>
+  </div>
+)}
 
         {error && (
           <div className="error-message">
@@ -716,7 +754,7 @@ function ReportsPage({
                 <span className="pagination-info">
                   Menampilkan {firstItem}–{lastItem}
                   {" dari "}
-                  {reports.length} report
+                  {filteredReports.length} report
                 </span>
 
                 <div className="pagination-buttons">
@@ -802,6 +840,203 @@ function ProfilePage({ user, onLogout }) {
       <div className="profile-details"><div><span>Name</span><strong>{user.name}</strong></div><div><span>Email</span><strong>{user.email}</strong></div><div><span>Role</span><strong>{user.role}</strong></div><div><span>System</span><strong>MANVIS</strong></div></div>
       <button className="logout-full-button" onClick={onLogout}>Logout</button>
     </section></>;
+}
+
+function DownloadLogPage({ logs, error }) {
+  const [search, setSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const ITEMS_PER_PAGE = 5;
+
+  const filteredLogs = logs.filter((log) => {
+    const keyword = search.toLowerCase().trim();
+
+    if (!keyword) return true;
+
+    return (
+      log.userName?.toLowerCase().includes(keyword) ||
+      log.filename?.toLowerCase().includes(keyword) ||
+      log.type?.toLowerCase().includes(keyword)
+    );
+  });
+
+  const totalPages = Math.ceil(
+    filteredLogs.length / ITEMS_PER_PAGE
+  );
+
+  const startIndex =
+    (currentPage - 1) * ITEMS_PER_PAGE;
+
+  const paginatedLogs = filteredLogs.slice(
+    startIndex,
+    startIndex + ITEMS_PER_PAGE
+  );
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
+
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">
+            SYSTEM
+          </div>
+
+          <h1>Download Log</h1>
+
+          <p>
+            Riwayat user yang melakukan download report.
+          </p>
+        </div>
+      </div>
+
+      <section className="reports-card">
+
+        <div className="reports-card-header">
+          <div>
+            <h2>Download Log</h2>
+            <p>
+              Catatan aktivitas download report.
+            </p>
+          </div>
+
+          <div className="report-search">
+            <div className="search-box">
+              <span>⌕</span>
+
+              <input
+                type="text"
+                placeholder="Cari user atau report..."
+                value={search}
+                onChange={(e) =>
+                  setSearch(e.target.value)
+                }
+              />
+            </div>
+          </div>
+        </div>
+
+        {error && (
+          <div className="error-message">
+            {error}
+          </div>
+        )}
+
+        {paginatedLogs.length === 0 ? (
+          <div className="empty-report">
+            <p>
+              Belum ada aktivitas download.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="report-list">
+              {paginatedLogs.map((log) => (
+                <div
+                  className="report-item"
+                  key={log.id}
+                >
+                  <div className="report-info">
+                    <div className="file-icon">
+                      {log.type === "Excel"
+                        ? "XLS"
+                        : "CSV"}
+                    </div>
+
+                    <div>
+                      <h3>{log.filename}</h3>
+
+                      <p>
+                        {log.userName}
+                        {" • "}
+                        {log.email}
+                      </p>
+
+                      <span className="report-created">
+                        {log.type}
+                        {" • "}
+                        {log.downloadedAt
+                          ? new Date(
+                              log.downloadedAt
+                            ).toLocaleString("id-ID")
+                          : ""}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {totalPages > 1 && (
+              <div className="pagination">
+                <span className="pagination-info">
+                  Menampilkan{" "}
+                  {startIndex + 1}
+                  {"–"}
+                  {Math.min(
+                    startIndex + ITEMS_PER_PAGE,
+                    filteredLogs.length
+                  )}
+                  {" dari "}
+                  {filteredLogs.length} log
+                </span>
+
+                <div className="pagination-buttons">
+                  <button
+                    disabled={currentPage === 1}
+                    onClick={() =>
+                      setCurrentPage((page) =>
+                        Math.max(page - 1, 1)
+                      )
+                    }
+                  >
+                    ‹
+                  </button>
+
+                  {Array.from(
+                    { length: totalPages },
+                    (_, index) => index + 1
+                  ).map((page) => (
+                    <button
+                      key={page}
+                      className={
+                        currentPage === page
+                          ? "active"
+                          : ""
+                      }
+                      onClick={() =>
+                        setCurrentPage(page)
+                      }
+                    >
+                      {page}
+                    </button>
+                  ))}
+
+                  <button
+                    disabled={
+                      currentPage === totalPages
+                    }
+                    onClick={() =>
+                      setCurrentPage((page) =>
+                        Math.min(
+                          page + 1,
+                          totalPages
+                        )
+                      )
+                    }
+                  >
+                    ›
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </section>
+    </>
+  );
 }
 
 function UsersPage() {
@@ -895,20 +1130,36 @@ function UsersPage() {
     }
   };
 
-  const removeUser = async (targetUser) => {
-    if (!window.confirm(`Hapus user ${targetUser.name}?`)) return;
+  
+const [userToDelete, setUserToDelete] = useState(null);
+const [deleting, setDeleting] = useState(false);
 
-    try {
-      const r = await fetch(`${API_URL}/users/${targetUser.id}`, {
-        method: "DELETE",
-      });
+const removeUser = async () => {
+  if (!userToDelete || deleting) return;
 
-      if (!r.ok) throw new Error("Gagal menghapus user.");
-      await loadUsers();
-    } catch (err) {
-      setError(err.message || "Gagal menghapus user.");
+  try {
+    setDeleting(true);
+    setError("");
+
+    const r = await fetch(
+      `${API_URL}/users/${userToDelete.id}`,
+      { method: "DELETE" }
+    );
+
+    const data = await r.json().catch(() => ({}));
+
+    if (!r.ok) {
+      throw new Error(data.detail || "Gagal menghapus user.");
     }
-  };
+
+    setUserToDelete(null);
+    await loadUsers();
+  } catch (err) {
+    setError(err.message || "Gagal menghapus user.");
+  } finally {
+    setDeleting(false);
+  }
+};
 
   return (
     <>
@@ -961,7 +1212,10 @@ function UsersPage() {
                 <button className="download-button" onClick={() => toggleActive(u)}>
                   {u.isActive ? "Nonaktifkan" : "Aktifkan"}
                 </button>
-                <button className="cancel-button" onClick={() => removeUser(u)}>
+                <button
+                  className="delete-user-button"
+                  onClick={() => setUserToDelete(u)}
+                >
                   Hapus
                 </button>
               </div>
@@ -1014,8 +1268,69 @@ function UsersPage() {
           </div>
         </div>
       )}
+      
+{userToDelete && (
+  <div
+    className="modal-overlay"
+    onMouseDown={(e) => {
+      if (e.target === e.currentTarget && !deleting) {
+        setUserToDelete(null);
+      }
+    }}
+  >
+    <div
+      className="delete-user-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="delete-user-title"
+    >
+      <div className="delete-user-icon">!</div>
+
+      <h2 id="delete-user-title">Hapus User?</h2>
+
+      <p className="delete-user-description">
+        Apakah kamu yakin ingin menghapus akun ini?
+        Tindakan ini mungkin tidak dapat dibatalkan.
+      </p>
+
+      <div className="delete-user-detail">
+        <div className="delete-user-avatar">
+          {(userToDelete.name || "U").charAt(0).toUpperCase()}
+        </div>
+
+        <div className="delete-user-info">
+          <strong>{userToDelete.name}</strong>
+          <span>{userToDelete.email}</span>
+          <span className="delete-user-role">
+            {userToDelete.role}
+          </span>
+        </div>
+      </div>
+
+      <div className="delete-user-actions">
+        <button
+          className="cancel-button"
+          onClick={() => setUserToDelete(null)}
+          disabled={deleting}
+        >
+          Batal
+        </button>
+
+        <button
+          className="delete-user-confirm"
+          onClick={removeUser}
+          disabled={deleting}
+        >
+          {deleting ? "Menghapus..." : "Ya, Hapus User"}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
     </>
   );
 }
+
+
 
 export default App;
